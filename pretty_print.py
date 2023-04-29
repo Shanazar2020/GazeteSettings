@@ -127,9 +127,10 @@ def get_content():
     pretty_print(responses)
 
 
-get_list()
+if __name__ == '__main__':
+    get_list()
 
-get_content()
+    get_content()
 
 # print(settings)
 # print(soup.is_xml)
