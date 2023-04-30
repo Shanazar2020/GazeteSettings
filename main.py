@@ -270,24 +270,27 @@ class HTMLContent(ABC):
             return True
         return False
 
-    def __remove(self, selector):
-        for removal in self.content.select(selector):
+    def __remove(self, selector, content=None):
+        if not content:
+            content = self.content
+        for removal in content.select(selector):
             if removal:
                 removal.decompose()
 
-    def __get_single_text(self, selector):
+    def __extract_single_text(self, selector):
+        def delete_unwanted_elements():
+            if text_holder and selector['delete']:
+                self.__remove(selector['delete'], text_holder)
+
+        def get_text_or_default():
+            return text_holder.get_text() if text_holder else selector['default']
+
         try:
-            # print("Selector:", selector)
-            text = self.content.select_one(selector)
-            if text:
-                # print("Text exists")
-                return text.get_text()
-            # else:
-            # print(self.content)
+            text_holder = self.content.select_one(selector['select'])
+            delete_unwanted_elements()
+            return get_text_or_default()
         except Exception as e:
             print(e)
-            return ""
-        return ""
 
     def __get_single_url(self, selector: str):
         try:
@@ -312,7 +315,7 @@ class HTMLContent(ABC):
     def get_title(self) -> str:
         if self.settings.title:
             # print('title exists')
-            return self.__get_single_text(self.settings.title)
+            return self.__extract_single_text(self.settings.title)
         return ""
 
     def _get_yazar(self):
@@ -324,7 +327,7 @@ class HTMLContent(ABC):
     def get_yazar(self) -> str:
         if self.settings.yazar:
             # print("yazar exists")
-            return self.cleaner.clean_text(self.__get_single_text(self.settings.yazar))
+            return self.cleaner.clean_text(self.__extract_single_text(self.settings.yazar))
         return ""
 
     def get_img(self) -> str:
@@ -334,7 +337,7 @@ class HTMLContent(ABC):
 
     def get_desc(self):
         if self.settings.desc:
-            return self.__get_single_text(self.settings.desc)
+            return self.__extract_single_text(self.settings.desc)
 
     @abstractmethod
     def get_main_content(self):
