@@ -45,15 +45,22 @@ class SettingsParser(object):
 
     @classmethod
     def _extract_delete(cls, text):
-        return cls.__extract_pattern(cls.delete_regex, text)
+        all_match = re.findall(cls.delete_regex, text)
+        if all_match:
+            return ','.join(all_match)
 
     @classmethod
     def _extract_default(cls, text):
-        return cls.__extract_pattern(cls.default_regex, text)
+        result = re.search(cls.default_regex, text)
+        if result:
+            return result.group(1)
+
 
     @classmethod
     def _extract_valid(cls, text):
-        return re.sub(cls.valid_regex, '', text)
+        text = re.sub(cls.valid_regex, '', text)
+        return re.sub(r"  ", '', text)
+
 
     @_non_checker
     def parse_text_selector(self, css_selector: str) -> dict:
@@ -82,9 +89,12 @@ class Settings(ABC):
         self._base_url = source.get('url')
         self._country = source.get('country')
         self._settings = self._get_settings(source)
+
         print(f"Before Parsing:")
         self.print_parsers()
+
         self._parse_settings()
+
         print(f"After Parsing: ")
         self.print_parsers()
 
@@ -235,8 +245,11 @@ class ArticleContentSettings(Settings):
 
 
 class Cleaner:
+
     def __init__(self):
-        self.cleaning_functions = [self.strip_whitespace, self.remove_newlines, self.remove_by_prefix]
+        self.patterns = ['\n', '  ']   # patterns to replace with corresponding replacements in text
+        self.replacements = ['', ' ']  # replacements to use
+        self.cleaning_functions = [self.remove_by_prefix, self.remove, self.strip_whitespace]
 
     def clean_text(self, text):
         cleaning_function: Callable
@@ -247,8 +260,10 @@ class Cleaner:
     def strip_whitespace(self, text):
         return text.strip()
 
-    def remove_newlines(self, text):
-        return text.replace('\n', '')
+    def remove(self, text):
+        for pattern, replacement in zip(self.patterns, self.replacements):
+            text = re.sub(pattern, replacement, text)
+        return text
 
     def remove_by_prefix(self, text: str):
         if text.startswith('By'):
@@ -270,6 +285,14 @@ class HTMLContent(ABC):
             return True
         return False
 
+    @staticmethod
+    def apply_cleaner(text_extract_func):
+        def wrapper(self, *args, **kwargs):
+            text = text_extract_func(self, *args, **kwargs)
+            return self.cleaner.clean_text(text)
+
+        return wrapper
+
     def __remove(self, selector, content=None):
         if not content:
             content = self.content
@@ -277,18 +300,22 @@ class HTMLContent(ABC):
             if removal:
                 removal.decompose()
 
+    @apply_cleaner
     def __extract_single_text(self, selector):
         def delete_unwanted_elements():
             if text_holder and selector['delete']:
                 self.__remove(selector['delete'], text_holder)
 
         def get_text_or_default():
-            return text_holder.get_text() if text_holder else selector['default']
+            return text_holder.get_text() if text_holder and text_holder.get_text() else selector['default']
 
         try:
-            text_holder = self.content.select_one(selector['select'])
-            delete_unwanted_elements()
-            return get_text_or_default()
+            if selector['select']:
+                text_holder = self.content.select_one(selector['select'])
+                delete_unwanted_elements()
+                return get_text_or_default()
+            else:
+                return selector['default']
         except Exception as e:
             print(e)
 
@@ -299,8 +326,7 @@ class HTMLContent(ABC):
                 attr = 'src'
                 if '>' in selector:
                     selector, attr = selector.split('>')
-                # print("selector: ", selector)
-                # print("attr:", attr)
+
                 img_tag = self.content.select_one(selector)
                 if img_tag:
                     img_url = img_tag.get(attr)
@@ -314,30 +340,22 @@ class HTMLContent(ABC):
 
     def get_title(self) -> str:
         if self.settings.title:
-            # print('title exists')
             return self.__extract_single_text(self.settings.title)
         return ""
-
-    def _get_yazar(self):
-        try:
-            pass
-        except Exception as e:
-            print(e)
 
     def get_yazar(self) -> str:
         if self.settings.yazar:
             # print("yazar exists")
-            return self.cleaner.clean_text(self.__extract_single_text(self.settings.yazar))
+            return self.__extract_single_text(self.settings.yazar)
         return ""
-
-    def get_img(self) -> str:
-        if self.settings.img:
-            # print("Img exists")
-            return self.__get_single_url(self.settings.img)
 
     def get_desc(self):
         if self.settings.desc:
             return self.__extract_single_text(self.settings.desc)
+
+    def get_img(self) -> str:
+        if self.settings.img:
+            return self.__get_single_url(self.settings.img)
 
     @abstractmethod
     def get_main_content(self):
@@ -363,6 +381,7 @@ class ArticleListHtml(HTMLContent):
         if self.settings.list:
             items = self.__get_list(self.settings.list)
             limit = min(len(items), self.settings.item_limit)
+
             results = [ArticleListHtml(str(items[i]), self.settings) for i in range(limit) if items[i]]
 
         return results
@@ -504,8 +523,8 @@ class Builder:
         return content, response
 
 
-def process_request_common(content: HTMLContent, response: Response):
-    if False and content.checked():
+def process_request_common(content: HTMLContent | ArticleContentHtml | ArticleListHtml, response: Response):
+    if True and content.checked():
         items = content.get_item_list() if hasattr(content, 'get_item_list') else [content]
         for item in items:
             title = item.get_title()
