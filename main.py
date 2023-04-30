@@ -5,6 +5,7 @@ from typing import Callable
 from bs4 import BeautifulSoup, Tag
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
+import re
 
 
 def get_source_info_from_db(id_):
@@ -21,6 +22,49 @@ def get_source_info_from_db(id_):
     return None
 
 
+class SettingsParser(object):
+    delete_regex = r'\((.*?)\)'
+    default_regex = r'"(.*?)"'
+    valid_regex = r'"(.*?)"|\((.*?)\)'
+
+    @staticmethod
+    def _non_checker(func):
+        def wrapper(self, *args, **kwargs):
+            dict_result = func(self, *args, **kwargs)
+            if any(dict_result.values()):
+                return dict_result
+            return None
+
+        return wrapper
+
+    @staticmethod
+    def __extract_pattern(pattern, text):
+        match = re.match(pattern, text)
+        if match:
+            return match.group(1)
+
+    @classmethod
+    def _extract_delete(cls, text):
+        return cls.__extract_pattern(cls.delete_regex, text)
+
+    @classmethod
+    def _extract_default(cls, text):
+        return cls.__extract_pattern(cls.default_regex, text)
+
+    @classmethod
+    def _extract_valid(cls, text):
+        return re.sub(cls.valid_regex, '', text)
+
+    @_non_checker
+    def parse_text_selector(self, css_selector: str) -> dict:
+        parsed = {"delete": self._extract_delete(css_selector),
+                  "default": self._extract_default(css_selector),
+                  "select": self._extract_valid(css_selector)}
+        return parsed
+
+    pass
+
+
 class Settings(ABC):
     class Keys:
         check = 'c'
@@ -31,12 +75,21 @@ class Settings(ABC):
 
     def __init__(self, _id):
         self._id = _id
+        self.parser = SettingsParser()
         source = self.__get_source_info()
 
         self._gazete = source.get('gazete')
         self._base_url = source.get('url')
         self._country = source.get('country')
         self._settings = self._get_settings(source)
+        print(f"Before Parsing:")
+        self.print_parsers()
+        self._parse_settings()
+        print(f"After Parsing: ")
+        self.print_parsers()
+
+    def print_parsers(self):
+        print(f"{self.title}, {self.yazar}, {self.desc}")
 
     def __get_source_info(self) -> dict:
         return get_source_info_from_db(self._id)
@@ -44,6 +97,11 @@ class Settings(ABC):
     @abstractmethod
     def _get_settings(self, sources) -> dict:
         pass
+
+    def _parse_settings(self):
+        self.title = self.parser.parse_text_selector(self.title)
+        self.yazar = self.parser.parse_text_selector(self.yazar)
+        self.desc = self.parser.parse_text_selector(self.desc)
 
     @property
     def check(self):
@@ -57,13 +115,25 @@ class Settings(ABC):
     def title(self):
         return self._settings[self.Keys.title]
 
+    @title.setter
+    def title(self, value):
+        self._settings[self.Keys.title] = value
+
     @property
     def yazar(self):
         return self._settings[self.Keys.yazar]
 
+    @yazar.setter
+    def yazar(self, value):
+        self._settings[self.Keys.yazar] = value
+
     @property
     def desc(self):
         return self._settings[self.Keys.desc]
+
+    @desc.setter
+    def desc(self, value):
+        self._settings[self.Keys.desc] = value
 
     @property
     def settings(self):
@@ -200,6 +270,11 @@ class HTMLContent(ABC):
             return True
         return False
 
+    def __remove(self, selector):
+        for removal in self.content.select(selector):
+            if removal:
+                removal.decompose()
+
     def __get_single_text(self, selector):
         try:
             # print("Selector:", selector)
@@ -314,32 +389,25 @@ class ArticleContentHtml(HTMLContent):
     def __init__(self, content, settings: ArticleContentSettings):
         super().__init__(content, settings)
 
-    def __remove(self, selector):
-        try:
-            for removal in self.content.select(selector):
-                if removal:
-                    removal.decompose()
-        except Exception as e:
-            print(e)
-
     def __get_content(self):
-        try:
-            self.settings: ArticleContentSettings
-            if self.settings.remove_tags:
-                self.__remove(self.settings.remove_tags)
+        self.settings: ArticleContentSettings
+        if self.settings.remove_tags:
+            self.__remove(self.settings.remove_tags)
 
-            content_holders = self.content.select(self.settings.content)
-            if content_holders:
-                content = ''.join(holder.get_text() for holder in content_holders if holder)
-                return content
-        except Exception as e:
-            print(e)
+        content_holders = self.content.select(self.settings.content)
+        if content_holders:
+            content = ''.join(holder.get_text() for holder in content_holders if holder)
+            return content
 
     def get_main_content(self):
-        self.settings: ArticleContentSettings
-        if not self.settings.is_content_none and self.settings.content:
-            return self.__get_content()
-        return ""
+        try:
+            self.settings: ArticleContentSettings
+            if not self.settings.is_content_none and self.settings.content:
+                return self.__get_content()
+            return ""
+
+        except Exception as e:
+            print(e)
 
 
 class Response(ABC):
@@ -419,7 +487,6 @@ class Builder:
     @staticmethod
     def build_article_list_request(html: str, source_id: int):
         settings = ArticleListSettings(source_id)
-        print("Article list builder: ", settings)
         content = ArticleListHtml(content=html, settings=settings)
         response = ArticleListResponse()
         return content, response
@@ -434,8 +501,8 @@ class Builder:
         return content, response
 
 
-def process_request_common(content, response):
-    if content.checked():
+def process_request_common(content: HTMLContent, response: Response):
+    if False and content.checked():
         items = content.get_item_list() if hasattr(content, 'get_item_list') else [content]
         for item in items:
             title = item.get_title()
