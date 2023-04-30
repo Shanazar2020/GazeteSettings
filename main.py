@@ -55,21 +55,49 @@ class SettingsParser(object):
         if result:
             return result.group(1)
 
-
     @classmethod
     def _extract_valid(cls, text):
         text = re.sub(cls.valid_regex, '', text)
         return re.sub(r"  ", '', text)
 
+    @classmethod
+    def _extract_tag_attr_pairs(cls, text_list: list[str], default_attr):
+        result = []
+        for text in text_list:
+            split = text.split('>')
+            if len(split) == 1:
+                split.append(default_attr)
+            result.append(split)
+
+        return result
+
+    def parse_url_selector(self, selector: str, default_attr: str) -> list[dict]:
+        if not selector:
+            return []
+        pairs = self._extract_tag_attr_pairs(selector.split(','), default_attr)
+        result = []
+        for pair in pairs:
+            parsed_pair = {
+                "tag": pair[0],
+                "attr": pair[1]
+            }
+            result.append(parsed_pair)
+        return result
 
     @_non_checker
     def parse_text_selector(self, css_selector: str) -> dict:
-        parsed = {"delete": self._extract_delete(css_selector),
-                  "default": self._extract_default(css_selector),
-                  "select": self._extract_valid(css_selector)}
+        parsed = {
+            "delete": self._extract_delete(css_selector),
+            "default": self._extract_default(css_selector),
+            "select": self._extract_valid(css_selector)
+        }
         return parsed
 
-    pass
+    def parse_article_url_selector(self, css_selector: str) -> list[dict]:
+        return self.parse_url_selector(css_selector, 'href')
+
+    def parse_img_url_selector(self, css_selector: str) -> list[dict]:
+        return self.parse_url_selector(css_selector, 'src')
 
 
 class Settings(ABC):
@@ -99,7 +127,7 @@ class Settings(ABC):
         self.print_parsers()
 
     def print_parsers(self):
-        print(f"{self.title}, {self.yazar}, {self.desc}")
+        print(f"{self.title}, {self.yazar}, {self.desc}, {self.img}")
 
     def __get_source_info(self) -> dict:
         return get_source_info_from_db(self._id)
@@ -112,6 +140,7 @@ class Settings(ABC):
         self.title = self.parser.parse_text_selector(self.title)
         self.yazar = self.parser.parse_text_selector(self.yazar)
         self.desc = self.parser.parse_text_selector(self.desc)
+        self.img = self.parser.parse_img_url_selector(self.img)
 
     @property
     def check(self):
@@ -120,6 +149,10 @@ class Settings(ABC):
     @property
     def img(self):
         return self._settings[self.Keys.img]
+
+    @img.setter
+    def img(self, value):
+        self._settings[self.Keys.img] = value
 
     @property
     def title(self):
@@ -157,6 +190,14 @@ class ArticleListSettings(Settings):
         url_index = 'u_i'
         item_limit = 'i_l'
 
+    def _parse_settings(self):
+        super()._parse_settings()
+        self.url = self.parser.parse_article_url_selector(self.url)
+
+    def print_parsers(self):
+        super().print_parsers()
+        print(f"{self.url}")
+
     @property
     def list(self):
         return self._settings[self.ListKeys.list]
@@ -164,6 +205,10 @@ class ArticleListSettings(Settings):
     @property
     def url(self):
         return self._settings[self.ListKeys.url]
+
+    @url.setter
+    def url(self, value):
+        self._settings[self.ListKeys.url] = value
 
     @property
     def url_index(self):
@@ -247,7 +292,7 @@ class ArticleContentSettings(Settings):
 class Cleaner:
 
     def __init__(self):
-        self.patterns = ['\n', '  ']   # patterns to replace with corresponding replacements in text
+        self.patterns = ['\n', '  ']  # patterns to replace with corresponding replacements in text
         self.replacements = ['', ' ']  # replacements to use
         self.cleaning_functions = [self.remove_by_prefix, self.remove, self.strip_whitespace]
 
@@ -524,7 +569,7 @@ class Builder:
 
 
 def process_request_common(content: HTMLContent | ArticleContentHtml | ArticleListHtml, response: Response):
-    if True and content.checked():
+    if False and content.checked():
         items = content.get_item_list() if hasattr(content, 'get_item_list') else [content]
         for item in items:
             title = item.get_title()
