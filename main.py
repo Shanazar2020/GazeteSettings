@@ -118,7 +118,7 @@ class Settings(ABC):
         self._country = source.get('country')
         self._settings = self._get_settings(source)
 
-        print(f"Before Parsing:")
+        print(f"{self._base_url}  Before Parsing:")
         self.print_parsers()
 
         self._parse_settings()
@@ -127,7 +127,8 @@ class Settings(ABC):
         self.print_parsers()
 
     def print_parsers(self):
-        print(f"{self.title}, {self.yazar}, {self.desc}, {self.img}")
+        # print(f"{self.title}, {self.yazar}, {self.desc}, {self.img}")
+        pass
 
     def __get_source_info(self) -> dict:
         return get_source_info_from_db(self._id)
@@ -195,8 +196,8 @@ class ArticleListSettings(Settings):
         self.url = self.parser.parse_article_url_selector(self.url)
 
     def print_parsers(self):
-        super().print_parsers()
-        print(f"{self.url}")
+        # super().print_parsers()
+        print(f"{self.img} {self.url}")
 
     @property
     def list(self):
@@ -481,10 +482,6 @@ class Response(ABC):
         self.content_key = self.get_main_content_key()
         self._built_data = dict()
 
-    def add_built_data(self):
-        self.data.append(self._built_data)
-        self._built_data = dict()
-
     def add_data(self, title, yazar, img, desc, content):
         data = {
             self.title_key: title,
@@ -494,26 +491,6 @@ class Response(ABC):
             self.content_key: content
         }
         self.data.append(data)
-
-    def set_title(self, title):
-        self._built_data[self.title_key] = title
-        return self
-
-    def set_yazar(self, yazar):
-        self._built_data[self.yazar_key] = yazar
-        return self
-
-    def set_img(self, img):
-        self._built_data[self.img_key] = img
-        return self
-
-    def set_desc(self, desc):
-        self._built_data[self.desc_key] = desc
-        return self
-
-    def set_content(self, content):
-        self._built_data[self.content_key] = content
-        return self
 
     def get_response(self):
         return [{'data': self.data}]
