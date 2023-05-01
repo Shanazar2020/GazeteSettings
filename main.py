@@ -11,6 +11,7 @@ import re
 def get_source_info_from_db(id_):
     if id_:
         try:
+            # TODO Need to change according to the environment
             client = MongoClient("localhost", 27017)
             db = client['news']
             collection = db['source_settings']
@@ -574,7 +575,7 @@ def process_request(r_type: str, content: str, source_id: int):
 if __name__ == '__main__':
     app = Flask(__name__)
 
-
+    # TODO need to change url
     @app.route('/content', methods=['POST'])
     def my_route():
         data = request.get_json()
@@ -585,5 +586,5 @@ if __name__ == '__main__':
         response = process_request(type_, content, s_id)
         return jsonify(response)
 
-
-    app.run(debug=True)
+    # TODO need to change port number, debug=True => changes applied while running
+    app.run(host='localhost', port=5000, debug=True)
