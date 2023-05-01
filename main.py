@@ -364,20 +364,13 @@ class HTMLContent(ABC):
         except Exception as e:
             print(e)
 
-    def __get_single_url(self, selector: str):
+    def __extract_single_url(self, selectors: list[dict]):
         try:
-            selectors = selector.split(',')
             for selector in selectors:
-                attr = 'src'
-                if '>' in selector:
-                    selector, attr = selector.split('>')
-
-                img_tag = self.content.select_one(selector)
-                if img_tag:
-                    img_url = img_tag.get(attr)
-
-                    if img_url:
-                        return img_url
+                url_holder = self.content.select_one(selector['tag'])
+                if url_holder:
+                    url = url_holder.get(selector['attr'])
+                    return url
 
         except Exception as e:
             print(e)
@@ -400,7 +393,7 @@ class HTMLContent(ABC):
 
     def get_img(self) -> str:
         if self.settings.img:
-            return self.__get_single_url(self.settings.img)
+            return self.__extract_single_url(self.settings.img)
 
     @abstractmethod
     def get_main_content(self):
@@ -431,16 +424,16 @@ class ArticleListHtml(HTMLContent):
 
         return results
 
-    def __get_url_at_index(self, selector, index) -> Tag | None:
+    def __get_url_at_index(self, selectors: list[dict], index: int = 0) -> str | None:
         try:
-            element_list = self.__get_list(selector)
-            if element_list and len(element_list) > index:
-                item: Tag
-                item = element_list[index]
-
-                if item and item.has_attr("href"):
-                    return item.get("href")
-
+            for selector in selectors:
+                url_holders = self.content.select(selector['tag'])
+                if url_holders and len(url_holders) > index:
+                    url_holder = url_holders[index]
+                    if url_holder:
+                        url = url_holder.get(selector['attr'])
+                        if url:
+                            return url
         except Exception as e:
             print(e)
         return None
@@ -569,7 +562,7 @@ class Builder:
 
 
 def process_request_common(content: HTMLContent | ArticleContentHtml | ArticleListHtml, response: Response):
-    if False and content.checked():
+    if True and content.checked():
         items = content.get_item_list() if hasattr(content, 'get_item_list') else [content]
         for item in items:
             title = item.get_title()
